@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>이미지 변환기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+<style>
+  :root{
+    --bg: #F5F4F0;
+    --panel: #FFFFFF;
+    --ink: #1B231F;
+    --ink-soft: #5B655F;
+    --line: #DAD9D2;
+    --accent: #2F6B52;
+    --accent-soft: #E4EFE8;
+    --danger: #B3402A;
+    --radius: 10px;
+    --mono: 'Roboto Mono', monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg: #141815;
+      --panel: #1D2320;
+      --ink: #EDEFEA;
+      --ink-soft: #9AA39C;
+      --line: #313830;
+      --accent: #6FBE99;
+      --accent-soft: #223A2E;
+      --danger: #E08669;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: #141815;
+    --panel: #1D2320;
+    --ink: #EDEFEA;
+    --ink-soft: #9AA39C;
+    --line: #313830;
+    --accent: #6FBE99;
+    --accent-soft: #223A2E;
+    --danger: #E08669;
+  }
+
+  *{ box-sizing: border-box; }
+  html, body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Noto Sans KR', -apple-system, sans-serif;
+    min-height: 100vh;
+    display:flex;
+    justify-content:center;
+    padding: 48px 20px 80px;
+  }
+  .wrap{ width:100%; max-width: 720px; }
+
+  header{ margin-bottom: 28px; }
+  .kicker{
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+  h1{
+    font-size: clamp(26px, 4vw, 34px);
+    font-weight: 900;
+    line-height: 1.25;
+    margin: 0 0 10px;
+    letter-spacing: -0.01em;
+  }
+  header p{
+    color: var(--ink-soft);
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 0;
+    max-width: 60ch;
+  }
+
+  .dropzone{
+    margin-top: 28px;
+    border: 1.5px dashed var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    padding: 44px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .dropzone .icon{
+    width: 40px; height: 40px;
+    margin: 0 auto 14px;
+    color: var(--accent);
+  }
+  .dropzone .main-text{
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .dropzone .sub-text{
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  input[type="file"]{ display:none; }
+
+  .settings-panel{
+    margin-top: 22px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .setting-item{
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    font-size: 13.5px;
+  }
+  .setting-item > label:first-child{ color: var(--ink-soft); white-space: nowrap; min-width: 78px; }
+  .setting-item input[type="range"]{ flex:1; accent-color: var(--accent); }
+  .setting-item .val{
+    font-family: var(--mono);
+    color: var(--accent);
+    width: 42px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .checkbox-label{
+    display:flex;
+    align-items:center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  .checkbox-label input{ accent-color: var(--accent); width:16px; height:16px; }
+
+  .resize-controls{
+    display:flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+  .resize-mode{ display:flex; gap: 18px; font-size: 13px; color: var(--ink-soft); }
+  .resize-mode label{ display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .resize-mode input{ accent-color: var(--accent); }
+  .resize-percent{ display:flex; align-items:center; gap:12px; }
+  .resize-percent input[type="range"]{ flex:1; accent-color: var(--accent); }
+  .resize-max{ display:flex; align-items:center; gap:10px; }
+  .resize-max input[type="number"]{
+    width: 100px;
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  .resize-max span{ color: var(--ink-soft); font-size: 13px; }
+
+  .toolbar{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 22px 0 12px;
+    flex-wrap: wrap;
+  }
+  .toolbar .count{
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .toolbar .actions{ display:flex; gap: 8px; flex-wrap: wrap; }
+
+  button{
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 13.5px;
+    font-weight: 500;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink);
+    padding: 9px 14px;
+    cursor: pointer;
+    transition: background .12s ease, border-color .12s ease, opacity .12s ease;
+  }
+  button:hover{ border-color: var(--accent); }
+  button:disabled{ opacity: .4; cursor: not-allowed; }
+  button.primary{
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #FCFDFB;
+  }
+  button.primary:hover{ opacity: .92; }
+  button.ghost{ background: transparent; border-color: transparent; color: var(--ink-soft); }
+  button.ghost:hover{ color: var(--danger); border-color: transparent; }
+
+  ul.filelist{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+  li.file-row{
+    display:flex;
+    align-items:center;
+    gap: 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .thumb{
+    width: 52px; height: 52px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: var(--accent-soft);
+    flex-shrink: 0;
+  }
+  .meta{ flex: 1; min-width: 0; }
+  .fname{
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fsize{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 3px;
+  }
+  .status{
+    font-size: 12px;
+    font-family: var(--mono);
+    padding: 4px 9px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .status.waiting{ color: var(--ink-soft); background: var(--bg); }
+  .status.processing{ color: var(--accent); background: var(--accent-soft); }
+  .status.done{ color: var(--accent); background: var(--accent-soft); }
+  .status.error{ color: var(--danger); background: color-mix(in srgb, var(--danger) 15%, transparent); }
+
+  .row-actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .row-actions button{ padding: 7px 10px; font-size: 12.5px; }
+
+  .empty-note{
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    text-align: center;
+  }
+
+  footer{
+    margin-top: 32px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    line-height: 1.6;
+  }
+
+  @media (max-width: 480px){
+    .toolbar{ flex-direction: column; align-items: stretch; }
+    .toolbar .actions{ justify-content: flex-end; }
+    .setting-item > label:first-child{ min-width: 60px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="kicker">FILE — CONVERTER</p>
+    <h1>WebP·PNG·HEIC를 JPG로 변환합니다</h1>
+    <p>파일을 끌어다 놓으면 브라우저 안에서 바로 JPG로 바뀝니다. 아이폰 사진(HEIC)도 지원하며, 필요하면 이미지 크기도 함께 줄일 수 있습니다. 서버로 전송되지 않으며, 여러 장을 한 번에 처리해 ZIP으로 받을 수 있습니다.</p>
+  </header>
+
+  <div class="dropzone" id="dropzone">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+      <path d="M12 3v12m0-12l-4 4m4-4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="main-text">여기에 이미지 파일을 놓으세요</div>
+    <div class="sub-text">WebP · PNG · HEIC 지원 · 클릭해서 선택 · 여러 장 동시 선택 가능</div>
+  </div>
+  <input type="file" id="fileInput" accept=".webp,.png,.heic,.heif,image/webp,image/png,image/heic,image/heif" multiple>
+
+  <div class="settings-panel">
+    <div class="setting-item">
+      <label for="quality">JPG 화질</label>
+      <input type="range" id="quality" min="0.5" max="1" step="0.05" value="0.92">
+      <span class="val" id="qualityVal">92%</span>
+    </div>
+
+    <label class="checkbox-label">
+      <input type="checkbox" id="resizeEnabled">
+      이미지 크기 조절
+    </label>
+
+    <div class="resize-controls" id="resizeControls" style="display:none;">
+      <div class="resize-mode">
+        <label><input type="radio" name="resizeMode" value="percent" checked> 비율(%)로 줄이기</label>
+        <label><input type="radio" name="resizeMode" value="max"> 최대 가로·세로(px) 지정</label>
+      </div>
+      <div class="resize-percent" id="resizePercentBox">
+        <input type="range" id="resizePercent" min="10" max="100" step="5" value="100">
+        <span class="val" id="resizePercentVal">100%</span>
+      </div>
+      <div class="resize-max" id="resizeMaxBox" style="display:none;">
+        <input type="number" id="maxWidth" placeholder="최대 가로(px)" min="1">
+        <span>×</span>
+        <input type="number" id="maxHeight" placeholder="최대 세로(px)" min="1">
+      </div>
+    </div>
+  </div>
+
+  <div class="toolbar" id="toolbar" style="display:none;">
+    <span class="count" id="count">0개 파일</span>
+    <div class="actions">
+      <button id="reconvertBtn">현재 설정으로 다시 변환</button>
+      <button id="clearBtn" class="ghost">전체 지우기</button>
+      <button id="zipBtn" class="primary" disabled>ZIP으로 전체 다운로드</button>
+    </div>
+  </div>
+
+  <ul class="filelist" id="filelist"></ul>
+  <p class="empty-note" id="emptyNote">아직 추가된 파일이 없습니다.</p>
+
+  <footer>변환은 이 브라우저 안에서만 이루어지며 이미지가 외부로 전송되지 않습니다. 탭을 닫으면 목록은 사라집니다. HEIC 변환과 ZIP 압축을 위해 최초 실행 시 필요한 스크립트를 인터넷에서 한 번 불러옵니다.</footer>
+</div>
+
+<script>
+(function(){
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const filelist = document.getElementById('filelist');
+  const toolbar = document.getElementById('toolbar');
+  const countEl = document.getElementById('count');
+  const zipBtn = document.getElementById('zipBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const reconvertBtn = document.getElementById('reconvertBtn');
+  const emptyNote = document.getElementById('emptyNote');
+
+  const qualityInput = document.getElementById('quality');
+  const qualityVal = document.getElementById('qualityVal');
+  const resizeEnabled = document.getElementById('resizeEnabled');
+  const resizeControls = document.getElementById('resizeControls');
+  const resizeModeInputs = document.getElementsByName('resizeMode');
+  const resizePercentBox = document.getElementById('resizePercentBox');
+  const resizeMaxBox = document.getElementById('resizeMaxBox');
+  const resizePercent = document.getElementById('resizePercent');
+  const resizePercentVal = document.getElementById('resizePercentVal');
+  const maxWidthInput = document.getElementById('maxWidth');
+  const maxHeightInput = document.getElementById('maxHeight');
+
+  let items = [];
+  let seq = 0;
+
+  qualityInput.addEventListener('input', () => {
+    qualityVal.textContent = Math.round(parseFloat(qualityInput.value) * 100) + '%';
+  });
+
+  resizeEnabled.addEventListener('change', () => {
+    resizeControls.style.display = resizeEnabled.checked ? 'flex' : 'none';
+  });
+
+  resizePercent.addEventListener('input', () => {
+    resizePercentVal.textContent = resizePercent.value + '%';
+  });
+
+  Array.from(resizeModeInputs).forEach(radio => {
+    radio.addEventListener('change', () => {
+      const mode = getResizeMode();
+      resizePercentBox.style.display = mode === 'percent' ? 'flex' : 'none';
+      resizeMaxBox.style.display = mode === 'max' ? 'flex' : 'none';
+    });
+  });
+
+  function getResizeMode(){
+    const checked = Array.from(resizeModeInputs).find(r => r.checked);
+    return checked ? checked.value : 'percent';
+  }
+
+  function getSettings(){
+    return {
+      quality: parseFloat(qualityInput.value),
+      resize: {
+        enabled: resizeEnabled.checked,
+        mode: getResizeMode(),
+        percent: parseFloat(resizePercent.value),
+        maxWidth: parseInt(maxWidthInput.value, 10) || null,
+        maxHeight: parseInt(maxHeightInput.value, 10) || null
+      }
+    };
+  }
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('drag');
+    handleFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener('change', (e) => {
+    handleFiles(e.target.files);
+    fileInput.value = '';
+  });
+
+  function isHeic(file){
+    const name = file.name.toLowerCase();
+    return name.endsWith('.heic') || name.endsWith('.heif') || /heic|heif/i.test(file.type);
+  }
+
+  function isSupported(file){
+    const name = file.name.toLowerCase();
+    return file.type === 'image/webp' || file.type === 'image/png' ||
+      /\.(webp|png|heic|heif)$/i.test(name) || isHeic(file);
+  }
+
+  function handleFiles(fileListRaw){
+    const files = Array.from(fileListRaw).filter(isSupported);
+    if (files.length === 0) return;
+    const settings = getSettings();
+    files.forEach(file => addFile(file, settings));
+    updateToolbar();
+  }
+
+  function formatSize(bytes){
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1024/1024).toFixed(2) + ' MB';
+  }
+
+  const PLACEHOLDER_THUMB = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52"><rect width="52" height="52" rx="6" fill="%23E4EFE8"/><path d="M14 34l7-8 6 6 5-7 6 9H14z" fill="%232F6B52" opacity="0.6"/><circle cx="20" cy="18" r="3" fill="%232F6B52" opacity="0.6"/></svg>'
+  );
+
+  function escapeHtml(s){
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function addFile(file, settings){
+    const id = 'f' + (seq++);
+    const item = { id, file, status: 'waiting', blob: null, url: null };
+    items.push(item);
+
+    const initialThumb = isHeic(file) ? PLACEHOLDER_THUMB : URL.createObjectURL(file);
+
+    const li = document.createElement('li');
+    li.className = 'file-row';
+    li.dataset.id = id;
+    li.innerHTML = `
+      <img class="thumb" src="${initialThumb}" alt="">
+      <div class="meta">
+        <div class="fname">${escapeHtml(file.name)}</div>
+        <div class="fsize" data-role="size">${formatSize(file.size)}</div>
+      </div>
+      <span class="status waiting" data-role="status">대기중</span>
+      <div class="row-actions" data-role="actions"></div>
+    `;
+    filelist.appendChild(li);
+    item.rowEl = li;
+    emptyNote.style.display = 'none';
+
+    convertItem(item, settings);
+  }
+
+  function loadImage(url){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = url;
+    });
+  }
+
+  function computeTargetSize(width, height, resizeSettings){
+    if (!resizeSettings || !resizeSettings.enabled){
+      return { width, height };
+    }
+    if (resizeSettings.mode === 'percent'){
+      const scale = (resizeSettings.percent || 100) / 100;
+      return {
+        width: Math.max(1, Math.round(width * scale)),
+        height: Math.max(1, Math.round(height * scale))
+      };
+    }
+    const maxW = resizeSettings.maxWidth || Infinity;
+    const maxH = resizeSettings.maxHeight || Infinity;
+    let scale = Math.min(maxW / width, maxH / height, 1);
+    if (!isFinite(scale) || scale <= 0) scale = 1;
+    return {
+      width: Math.max(1, Math.round(width * scale)),
+      height: Math.max(1, Math.round(height * scale))
+    };
+  }
+
+  function setStatus(item, cls, text){
+    const statusEl = item.rowEl.querySelector('[data-role="status"]');
+    statusEl.textContent = text;
+    statusEl.className = 'status ' + cls;
+  }
+
+  async function convertItem(item, settings){
+    setStatus(item, 'processing', '변환중');
+    let sourceUrl = null;
+    try {
+      if (isHeic(item.file)){
+        const converted = await heic2any({ blob: item.file, toType: 'image/png' });
+        const pngBlob = Array.isArray(converted) ? converted[0] : converted;
+        sourceUrl = URL.createObjectURL(pngBlob);
+      } else {
+        sourceUrl = URL.createObjectURL(item.file);
+      }
+
+      const img = await loadImage(sourceUrl);
+      const target = computeTargetSize(img.naturalWidth, img.naturalHeight, settings.resize);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = target.width;
+      canvas.height = target.height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, target.width, target.height);
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', settings.quality));
+      if (!blob) throw new Error('encode-failed');
+
+      if (item.url) URL.revokeObjectURL(item.url);
+      item.blob = blob;
+      item.url = URL.createObjectURL(blob);
+      item.outWidth = target.width;
+      item.outHeight = target.height;
+      item.status = 'done';
+      renderDone(item);
+    } catch (e){
+      console.error(e);
+      markError(item);
+    } finally {
+      if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+      updateZipButton();
+    }
+  }
+
+  function markError(item){
+    item.status = 'error';
+    setStatus(item, 'error', '실패');
+  }
+
+  function renderDone(item){
+    setStatus(item, 'done', '완료');
+
+    const thumbEl = item.rowEl.querySelector('.thumb');
+    thumbEl.src = item.url;
+
+    const sizeEl = item.rowEl.querySelector('[data-role="size"]');
+    sizeEl.textContent = `${formatSize(item.file.size)} → ${formatSize(item.blob.size)} · ${item.outWidth}×${item.outHeight}px`;
+
+    const actionsEl = item.rowEl.querySelector('[data-role="actions"]');
+    actionsEl.innerHTML = '';
+    const jpgName = item.file.name.replace(/\.(webp|png|heic|heif)$/i, '') + '.jpg';
+    const dlBtn = document.createElement('button');
+    dlBtn.textContent = '다운로드';
+    dlBtn.addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.href = item.url;
+      a.download = jpgName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+    const rmBtn = document.createElement('button');
+    rmBtn.className = 'ghost';
+    rmBtn.textContent = '제거';
+    rmBtn.addEventListener('click', () => removeItem(item.id));
+    actionsEl.appendChild(dlBtn);
+    actionsEl.appendChild(rmBtn);
+  }
+
+  function removeItem(id){
+    const idx = items.findIndex(i => i.id === id);
+    if (idx === -1) return;
+    const item = items[idx];
+    if (item.url) URL.revokeObjectURL(item.url);
+    item.rowEl.remove();
+    items.splice(idx, 1);
+    updateToolbar();
+    updateZipButton();
+    if (items.length === 0) emptyNote.style.display = 'block';
+  }
+
+  clearBtn.addEventListener('click', () => {
+    items.forEach(i => { if (i.url) URL.revokeObjectURL(i.url); });
+    items = [];
+    filelist.innerHTML = '';
+    updateToolbar();
+    updateZipButton();
+    emptyNote.style.display = 'block';
+  });
+
+  reconvertBtn.addEventListener('click', () => {
+    const settings = getSettings();
+    items.forEach(item => {
+      const actionsEl = item.rowEl.querySelector('[data-role="actions"]');
+      if (actionsEl) actionsEl.innerHTML = '';
+      convertItem(item, settings);
+    });
+  });
+
+  function updateToolbar(){
+    toolbar.style.display = items.length ? 'flex' : 'none';
+    countEl.textContent = `${items.length}개 파일`;
+  }
+
+  function updateZipButton(){
+    const doneCount = items.filter(i => i.status === 'done').length;
+    zipBtn.disabled = doneCount === 0;
+    zipBtn.textContent = doneCount > 0
+      ? `ZIP으로 전체 다운로드 (${doneCount})`
+      : 'ZIP으로 전체 다운로드';
+  }
+
+  zipBtn.addEventListener('click', async () => {
+    const doneItems = items.filter(i => i.status === 'done');
+    if (doneItems.length === 0) return;
+    zipBtn.disabled = true;
+    const originalText = zipBtn.textContent;
+    zipBtn.textContent = '압축 중…';
+    try {
+      const zip = new JSZip();
+      const usedNames = new Set();
+      doneItems.forEach(item => {
+        let name = item.file.name.replace(/\.(webp|png|heic|heif)$/i, '') + '.jpg';
+        let unique = name, n = 1;
+        while (usedNames.has(unique)) {
+          unique = name.replace(/\.jpg$/i, `_${n++}.jpg`);
+        }
+        usedNames.add(unique);
+        zip.file(unique, item.blob);
+      });
+      const content = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(content);
+      a.download = 'converted-jpg.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      console.error(e);
+      alert('ZIP 생성 중 문제가 발생했습니다.');
+    } finally {
+      updateZipButton();
+      if (zipBtn.disabled === false) zipBtn.textContent = originalText;
+    }
+  });
+})();
+</script>
+</body>
+</html>
